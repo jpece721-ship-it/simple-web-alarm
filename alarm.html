@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>アラーム</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      text-align: center;
+      padding: 40px;
+      background: #16213e;
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      width: 360px;
+    }
+
+    h1 { font-size: 1.4rem; margin-bottom: 30px; color: #a8c0ff; letter-spacing: 4px; }
+
+    .clock {
+      font-size: 4.5rem;
+      font-weight: 200;
+      letter-spacing: 4px;
+      margin: 10px 0 30px;
+      font-variant-numeric: tabular-nums;
+      color: #7efff5;
+    }
+
+    label { font-size: 0.85rem; color: #a8c0ff; letter-spacing: 2px; display: block; margin-bottom: 8px; }
+
+    input[type="time"] {
+      font-size: 2.5rem;
+      background: #0f3460;
+      color: #eee;
+      border: 2px solid #a8c0ff33;
+      border-radius: 12px;
+      padding: 10px 20px;
+      width: 100%;
+      text-align: center;
+      margin-bottom: 24px;
+      outline: none;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+    input[type="time"]:focus { border-color: #a8c0ff; }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      letter-spacing: 3px;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      margin-bottom: 12px;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:active { transform: scale(0.97); }
+    .btn-set    { background: #a8c0ff; color: #16213e; font-weight: 700; }
+    .btn-cancel { background: #3a3a5c; color: #eee; display: none; }
+
+    .status {
+      font-size: 0.9rem;
+      letter-spacing: 2px;
+      min-height: 1.4em;
+      color: #ffd700;
+    }
+
+    /* 発火時 */
+    .ringing .clock  { color: #ff6b6b; animation: pulse 0.6s infinite; }
+    .ringing .status { color: #ff6b6b; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+<div class="container" id="app">
+  <h1>A L A R M</h1>
+  <div class="clock" id="clock">--:--:--</div>
+
+  <label for="alarmTime">アラーム時刻</label>
+  <input type="time" id="alarmTime" step="60">
+
+  <button class="btn btn-set" id="btnSet" onclick="setAlarm()">セット</button>
+  <button class="btn btn-cancel" id="btnCancel" onclick="cancelAlarm()">キャンセル</button>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+  let alarmTime = null;
+  let audioCtx  = null;
+  let ringing   = false;
+  let ringInterval = null;
+
+  /* 現在時刻表示 */
+  function updateClock() {
+    const now = new Date();
+    const hh  = String(now.getHours()).padStart(2,'0');
+    const mm  = String(now.getMinutes()).padStart(2,'0');
+    const ss  = String(now.getSeconds()).padStart(2,'0');
+    document.getElementById('clock').textContent = `${hh}:${mm}:${ss}`;
+
+    if (alarmTime && !ringing) {
+      const [ah, am] = alarmTime.split(':').map(Number);
+      if (now.getHours() === ah && now.getMinutes() === am && now.getSeconds() === 0) {
+        ring();
+      }
+    }
+  }
+
+  /* アラームセット */
+  function setAlarm() {
+    if (ringing) stopRing();
+
+    const val = document.getElementById('alarmTime').value;
+    if (!val) { document.getElementById('status').textContent = '時刻を選択してください'; return; }
+
+    alarmTime = val;
+    document.getElementById('btnSet').style.display    = 'none';
+    document.getElementById('btnCancel').style.display = 'block';
+    document.getElementById('status').textContent      = `${val} にアラームをセット`;
+  }
+
+  /* キャンセル */
+  function cancelAlarm() {
+    stopRing();
+    alarmTime = null;
+    document.getElementById('btnSet').style.display    = 'block';
+    document.getElementById('btnCancel').style.display = 'none';
+    document.getElementById('status').textContent      = 'キャンセルしました';
+  }
+
+  /* 鳴動 */
+  function ring() {
+    ringing = true;
+    document.getElementById('app').classList.add('ringing');
+    document.getElementById('status').textContent = '⏰ アラーム！';
+
+    playBeep();
+    ringInterval = setInterval(playBeep, 1200);
+
+    /* クリックで止める */
+    document.addEventListener('click', stopRingOnce);
+  }
+
+  function stopRingOnce() {
+    stopRing();
+    document.removeEventListener('click', stopRingOnce);
+  }
+
+  function stopRing() {
+    ringing = false;
+    clearInterval(ringInterval);
+    document.getElementById('app').classList.remove('ringing');
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  }
+
+  /* Web Audio でビープ音 */
+  function playBeep() {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const freqs = [880, 1100, 880];
+      let t = audioCtx.currentTime;
+      freqs.forEach(f => {
+        const osc  = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type      = 'sine';
+        osc.frequency.setValueAtTime(f, t);
+        gain.gain.setValueAtTime(0.4, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        osc.start(t);
+        osc.stop(t + 0.18);
+        t += 0.2;
+      });
+    } catch(e) {}
+  }
+
+  setInterval(updateClock, 1000);
+  updateClock();
+</script>
+</body>
+</html>
